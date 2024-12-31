@@ -8,7 +8,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 import requests
-import io
 
 st.set_page_config(
     page_title="Zoom Video Downloader",
@@ -73,6 +72,23 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+def separate_links(input_string):
+    links = []
+    start = 0
+
+    while True:
+        start = input_string.find("http", start)
+        if start == -1:
+            break
+        end = input_string.find("http", start + 1)
+        if end == -1:
+            links.append(input_string[start:])
+            break
+        links.append(input_string[start:end])
+        start = end
+
+    return links
+
 def init_webdriver():
     chrome_options = Options()
     chrome_options.headless = True
@@ -82,37 +98,32 @@ def init_webdriver():
 def download_zoom_video(url):
     driver = init_webdriver()
     try:
-        with st.status("📥 Download Progress", expanded=True) as status:
-            status.write("🌐 Initializing browser...")
-            driver.get(url)
-            time.sleep(5)
+        driver.get(url)
+        time.sleep(5)
 
-            status.write("🔍 Locating video...")
-            WebDriverWait(driver, 30).until(
-                EC.presence_of_element_located((By.ID, "vjs_video_3_html5_api"))
-            )
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.ID, "vjs_video_3_html5_api"))
+        )
 
-            video_element = driver.find_element(By.ID, "vjs_video_3_html5_api")
-            video_url = video_element.get_attribute("src")
+        video_element = driver.find_element(By.ID, "vjs_video_3_html5_api")
+        video_url = video_element.get_attribute("src")
 
-            if not video_url or ".mp4" not in video_url:
-                return None, "No valid video URL found"
+        if not video_url or ".mp4" not in video_url:
+            return None, "No valid video URL found"
 
-            status.write("🔄 Setting up download...")
-            cookies = driver.get_cookies()
-            session = requests.Session()
-            for cookie in cookies:
-                session.cookies.set(cookie['name'], cookie['value'])
+        cookies = driver.get_cookies()
+        session = requests.Session()
+        for cookie in cookies:
+            session.cookies.set(cookie['name'], cookie['value'])
 
-            headers = {
-                "User-Agent": driver.execute_script("return navigator.userAgent"),
-                "Referer": driver.current_url
-            }
+        headers = {
+            "User-Agent": driver.execute_script("return navigator.userAgent"),
+            "Referer": driver.current_url
+        }
 
-            status.write("⬇️ Downloading video...")
-            response = session.get(video_url, headers=headers, stream=True)
+        response = session.get(video_url, headers=headers, stream=True)
 
-            return (response.content, None) if response.status_code == 200 else (None, f"Download failed with status code: {response.status_code}")
+        return (response.content, None) if response.status_code == 200 else (None, f"Download failed with status code: {response.status_code}")
 
     except Exception as e:
         return None, str(e)
@@ -125,31 +136,37 @@ st.markdown("""
     <div class='instructions'>
         <h4>Quick Guide:</h4>
         <ol style='color: #ffffff; margin-bottom: 0;'>
-            <li>Paste your Zoom video URL</li>
-            <li>Click Download</li>
+            <li>Paste a string containing multiple Zoom video URLs</li>
+            <li>Click Download All</li>
             <li>Wait for processing</li>
-            <li>Save your video</li>
+            <li>Save your videos</li>
         </ol>
     </div>
 """, unsafe_allow_html=True)
 
-url = st.text_input("", placeholder="Enter Zoom video URL here...")
+input_string = st.text_input("", placeholder="Enter multiple Zoom video URLs here...")
 
-col1, col2, col3 = st.columns([1,2,1])
+col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    if st.button("📥 Download Video"):
-        if url:
-            video_content, error = download_zoom_video(url)
+    if st.button("📅 Download All Videos"):
+        if input_string:
+            links = separate_links(input_string)
+            if links:
+                for i, url in enumerate(links):
+                    st.write(f"Processing link {i + 1}: {url}")
+                    video_content, error = download_zoom_video(url)
 
-            if video_content:
-                st.success("✅ Download complete!")
-                st.download_button(
-                    label="💾 Save Video",
-                    data=video_content,
-                    file_name="zoom_recording.mp4",
-                    mime="video/mp4",
-                )
+                    if video_content:
+                        st.success(f"✅ Download complete for link {i + 1}!")
+                        st.download_button(
+                            label=f"💾 Save Video {i + 1}",
+                            data=video_content,
+                            file_name=f"zoom_recording_{i + 1}.mp4",
+                            mime="video/mp4",
+                        )
+                    else:
+                        st.error(f"❌ Error for link {i + 1}: {error}")
             else:
-                st.error(f"❌ {error}")
+                st.warning("⚠️ No valid URLs found in the input.")
         else:
-            st.warning("⚠️ Please enter a URL")
+            st.warning("⚠️ Please enter URLs")
